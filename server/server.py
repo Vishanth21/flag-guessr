@@ -33,23 +33,38 @@ def recv_msg(sock):
     return json.loads(raw_data.decode('utf-8'))
 
 def handle_client(connection, addr):
+    username = None
     with connection:
-        print(f"Client {addr} connected.")
-        send_msg(connection, {"type": "STATUS", "message": "Welcome to the Flag Guessr Server!"})
-        
-        while True:
-            try:
+        try:
+            # wait for the initial JOIN message
+            join_data = recv_msg(connection)
+            if not join_data or join_data.get("type") != "JOIN":
+                print(f"[{addr[0]}:{addr[1]}] Failed to join properly.")
+                return
+
+            username = join_data.get("username", "Unknown")
+            print(f"Player '{username}' connected from {addr[0]}:{addr[1]}.")
+
+            # send welcome guidelines
+            guidelines = (
+                f"Welcome to Flag-Guessr, {username}!\n"
+                "You will see an flag and have x seconds to guess the country.\n"
+                "Wait for game to start.\n"
+            )
+            send_msg(connection, {"type": "STATUS", "message": guidelines})
+
+            while True:
                 data = recv_msg(connection)
                 if not data:
-                    print(f"Client {addr} disconnected cleanly.")
+                    print(f"Player '{username}' disconnected cleanly.")
                     break
 
-                print(f"[{addr[0]}:{addr[1]}] says: {data}")
+                print(f"[{username}] says: {data}")
                 reply = {"type": "ECHO", "server_received": data}
                 send_msg(connection, reply)
-            except ConnectionError:
-                print(f"Client {addr} forcefully disconnected.")
-                break
+
+        except ConnectionError:
+            print(f"Player '{username or f'{addr[0]}:{addr[1]}'}' forcefully disconnected.")
 
 def main():
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_socket:

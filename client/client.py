@@ -48,6 +48,12 @@ def listen_to_server(client_socket):
     sys.exit(0)
 
 def main():
+    if len(sys.argv) < 2:
+        print("Usage: python client.py <username>")
+        sys.exit(1)
+    
+    username = sys.argv[1]
+
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as client_socket:
         try:
             client_socket.connect((HOST, PORT))
@@ -56,6 +62,10 @@ def main():
             return
 
         print(f"Connected to server at {HOST}:{PORT}")
+
+        # send initial JOIN message with username
+        join_payload = {"type": "JOIN", "username": username}
+        send_msg(client_socket, join_payload)
 
         listener_thread = threading.Thread(target=listen_to_server, args=(client_socket,), daemon=True)
         listener_thread.start()
