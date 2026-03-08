@@ -1,24 +1,52 @@
 import socket
 import threading
+import struct
+import json
 
 HOST = "127.0.0.1"
 PORT = 65432
 
+def recv_all(sock, n):
+    data = bytearray()
+    while len(data) < n:
+        packet = sock.recv(n - len(data))
+        if not packet:
+            return None
+        data.extend(packet)
+    return data
+
+def send_msg(sock, msg_dict):
+    msg_bytes = json.dumps(msg_dict).encode('utf-8')
+    header = struct.pack('>I', len(msg_bytes))
+    sock.sendall(header + msg_bytes)
+
+
+# extract message header first, then extract message body
+def recv_msg(sock):
+    raw_msglen = recv_all(sock, 4) #header
+    if not raw_msglen:
+        return None
+    msglen = struct.unpack('>I', raw_msglen)[0]
+    raw_data = recv_all(sock, msglen) #body
+    if not raw_data:
+        return None
+    return json.loads(raw_data.decode('utf-8'))
+
 def handle_client(connection, addr):
     with connection:
         print(f"Client {addr} connected.")
+        send_msg(connection, {"type": "STATUS", "message": "Welcome to the Flag Guessr Server!"})
+        
         while True:
             try:
-                data = connection.recv(2048)
+                data = recv_msg(connection)
                 if not data:
                     print(f"Client {addr} disconnected cleanly.")
                     break
 
-                message = data.decode("utf-8")
-                print(f"[{addr[0]}:{addr[1]}] says: {message}")
-                
-                reply = f"Server received: {message}\n"
-                connection.sendall(reply.encode("utf-8"))
+                print(f"[{addr[0]}:{addr[1]}] says: {data}")
+                reply = {"type": "ECHO", "server_received": data}
+                send_msg(connection, reply)
             except ConnectionError:
                 print(f"Client {addr} forcefully disconnected.")
                 break

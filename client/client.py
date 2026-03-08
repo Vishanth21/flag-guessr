@@ -1,18 +1,44 @@
 import socket
 import threading
 import sys
+import struct
+import json
 
 HOST = "127.0.0.1"
 PORT = 65432
 
+def recv_all(sock, n):
+    data = bytearray()
+    while len(data) < n:
+        packet = sock.recv(n - len(data))
+        if not packet:
+            return None
+        data.extend(packet)
+    return data
+
+def send_msg(sock, msg_dict):
+    msg_bytes = json.dumps(msg_dict).encode('utf-8')
+    header = struct.pack('>I', len(msg_bytes))
+    sock.sendall(header + msg_bytes)
+# extract message header first, then extract message body
+def recv_msg(sock):
+    raw_msglen = recv_all(sock, 4) #header
+    if not raw_msglen:
+        return None
+    msglen = struct.unpack('>I', raw_msglen)[0]
+    raw_data = recv_all(sock, msglen) #body
+    if not raw_data:
+        return None
+    return json.loads(raw_data.decode('utf-8'))
+
 def listen_to_server(client_socket):
     while True:
         try:
-            response = client_socket.recv(1024)
-            if not response:
+            response_dict = recv_msg(client_socket)
+            if not response_dict:
                 print("\nServer closed the connection.")
                 break
-            print(f"\r{response.decode('utf-8')}", end="")
+            print(f"\r[Server]: {json.dumps(response_dict)}")
             print("\rSay Something: ", end="", flush=True)
         except ConnectionError:
             print("\nConnection to server lost.")
@@ -41,7 +67,8 @@ def main():
                     continue
                 if data.lower() in ["quit", "exit"]:
                     break
-                client_socket.sendall(data.encode("utf-8"))
+                payload = {"type": "CHAT", "message": data}
+                send_msg(client_socket, payload)
             except (EOFError, KeyboardInterrupt):
                 break
 
