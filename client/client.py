@@ -3,6 +3,12 @@ import threading
 import sys
 import struct
 import json
+from rich.console import Console
+from rich.panel import Panel
+from rich.layout import Layout
+
+console = Console(force_terminal=True) # wrap print with threads cuz user and 
+print_lock = threading.Lock()           # server broadcast can happen at same time
 
 HOST = "127.0.0.1"
 PORT = 65432
@@ -35,13 +41,30 @@ def listen_to_server(client_socket):
     while True:
         try:
             response_dict = recv_msg(client_socket)
-            if not response_dict:
-                print("\nServer closed the connection.")
-                break
-            print(f"\r[Server]: {json.dumps(response_dict)}")
-            print("\rSay Something: ", end="", flush=True)
-        except ConnectionError:
-            print("\nConnection to server lost.")
+            with print_lock:
+                if not response_dict:
+                    console.print("\n[bold red]Server closed the connection.[/bold red]")
+                    break
+                
+                # Clear the current prompt line first
+                print("\r\033[K", end="", flush=True)
+
+                if response_dict.get("type") == "STATUS":
+                    console.print(f"[bold cyan]Server:[/bold cyan] {response_dict.get('message')}")
+                elif response_dict.get("type") == "ECHO":
+                    # Extract string inside the embedded dict if it's there
+                    raw_echo = response_dict.get("server_received", {})
+                    msg = raw_echo.get("message") if isinstance(raw_echo, dict) else str(raw_echo)
+                    console.print(f"[bold cyan]Server (Echo):[/bold cyan] {msg}")
+                else:
+                    console.print(f"[bold cyan]Server JSON:[/bold cyan] {json.dumps(response_dict)}")
+                
+                # Re-draw the prompt safely
+                console.print("[bold yellow]Say Something:[/bold yellow] ", end="")
+
+        except OSError:
+            with print_lock:
+                console.print("\n[bold red]Connection to server lost.[/bold red]")
             break
     
     client_socket.close()
@@ -49,7 +72,7 @@ def listen_to_server(client_socket):
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: python client.py <username>")
+        console.print("[bold red]Usage: python client.py <username>[/bold red]")
         sys.exit(1)
     
     username = sys.argv[1]
@@ -58,10 +81,10 @@ def main():
         try:
             client_socket.connect((HOST, PORT))
         except ConnectionRefusedError:
-            print(f"Connection failed. Is the server running on {HOST}:{PORT}?")
+            console.print(f"[bold red]Connection failed.[/bold red] Is the server running on {HOST}:{PORT}?")
             return
 
-        print(f"Connected to server at {HOST}:{PORT}")
+        console.print(f"[bold green]Connected to server at {HOST}:{PORT}[/bold green]")
 
         # send initial JOIN message with username
         join_payload = {"type": "JOIN", "username": username}
