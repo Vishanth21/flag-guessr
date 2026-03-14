@@ -13,8 +13,8 @@ A multiplayer flag-guessing quiz game built with raw TCP sockets and Python. Pla
 - [x] Country flags converted to ANSI art
 - [x] Rich terminal UI on the client side
 - [x] Timed question rounds with countdown
-- [ ] Answer evaluation and scoring
-- [ ] Live leaderboard after each round
+- [x] Answer evaluation and scoring
+- [x] Live leaderboard after each round
 - [ ] SSL/TLS encrypted connections
 
 ## Project Structure
@@ -136,7 +136,7 @@ All messages follow: `[4-byte big-endian length][JSON payload]`
 | Type | Payload |
 |---|---|
 | `JOIN` | `{"type": "JOIN", "username": "Player1"}` |
-| `ANSWER` | `{"type": "ANSWER", "question_id": 1, "answer": "France"}` |
+| `ANSWER` | `{"type": "ANSWER", "question_id": 1, "answer": "France", "client_elapsed_time": 2.5}` |
 | `CHAT` | `{"type": "CHAT", "message": "hello"}` |
 
 ### Server to Client
@@ -144,6 +144,6 @@ All messages follow: `[4-byte big-endian length][JSON payload]`
 | Type | Payload |
 |---|---|
 | `STATUS` | `{"type": "STATUS", "message": "..."}` |
-| `QUESTION` | `{"type": "QUESTION", "question_id": 1, "time_limit": 10, "flag_data": "..."}` |
-| `EVALUATION` | `{"type": "EVALUATION", "result": "correct", "score_earned": 5}` |
-| `LEADERBOARD` | `{"type": "LEADERBOARD", "rankings": [...]}` |
+| `QUESTION` | `{"type": "QUESTION", "question_id": 1, "time_limit": 10, "flag_data": "...", "options": ["France", "Italy", "Spain", "Germany"]}` |
+| `EVALUATION` | `{"type": "EVALUATION", "result": "correct", "score_earned": 15, "message": "..."}` |
+| `LEADERBOARD` | `{"type": "LEADERBOARD", "rankings": [{"username": "Player1", "score": 15}, ... ]}` |

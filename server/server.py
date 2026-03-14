@@ -2,6 +2,7 @@ import socket
 import threading
 import struct
 import json
+import game
 
 HOST = "127.0.0.1"
 PORT = 65432
@@ -58,19 +59,14 @@ def handle_client(connection, addr):
                 return
 
             username = join_data.get("username", "Unknown")
+            # TODO: handle multiple same username
             print(f"Player '{username}' connected from {addr[0]}:{addr[1]}.")
 
             with clients_lock:
                 connected_clients[username] = connection
                 player_count = len(connected_clients)
 
-            # send welcome guidelines
-            guidelines = (
-                f"Welcome to Flag-Guessr, {username}!\n"
-                "You will see an flag and have x seconds to guess the country.\n"
-                "Wait for game to start.\n"
-            )
-            send_msg(connection, {"type": "STATUS", "message": guidelines})
+            send_msg(connection, {"type": "STATUS", "message": f"Welcome to Flag-Guessr, {username}!\n"})
 
             broadcast({"type": "STATUS", "message": f"[LOBBY] '{username}' joined. ({player_count} players ready)"})
 
@@ -80,9 +76,16 @@ def handle_client(connection, addr):
                     print(f"Player '{username}' disconnected cleanly.")
                     break
 
-                print(f"[{username}] says: {data}")
-                reply = {"type": "ECHO", "server_received": data}
-                send_msg(connection, reply)
+                msg_type = data.get("type")
+
+                if msg_type == "ANSWER" and game_started.is_set():
+                    # only accept answers for the active round
+                    active_qid = game.current_round.get("question_id")
+                    if data.get("question_id") == active_qid:
+                        data["username"] = username
+                        game.answer_queue.put(data)
+                else:
+                    print(f"[{username}] unknown message: {data}")
 
         except OSError:
             print(f"Player '{username or f'{addr[0]}:{addr[1]}'}' forcefully disconnected.")
@@ -98,19 +101,42 @@ def handle_client(connection, addr):
                 broadcast({"type": "STATUS", "message": f"[LOBBY] '{username}' left. ({player_count} players ready)"})
 
 def admin_console():
-    """listens for the 'start' command from the server operator."""
+    """Listens for the 'start <rounds> <timeout>' command from the server operator."""
     while True:
         try:
-            cmd = input()
-            if cmd.strip().lower() == "start" and not game_started.is_set():
-                with clients_lock:
-                    player_count = len(connected_clients)
-                if player_count == 0:
-                    print("Cannot start game: 0 players connected.")
-                else:
-                    print(f"Starting game with {player_count} players...")
-                    game_started.set()
-                    broadcast({"type": "STATUS", "message": "[LOBBY] Admin started the game! Prepare yourselves."})
+            cmd = input().strip()
+            if not cmd:
+                continue
+            parts = cmd.split()
+            if parts[0].lower() == "reset":
+                game.reset_game(game_started)
+                print("Game was reset successfully.")
+                continue
+            if parts[0].lower() != "start":
+                print("Unknown command. Usage: start <rounds> <timeout>")
+                continue
+            if game_started.is_set():
+                print("A game is already in progress.")
+                continue
+            try:
+                rounds, timeout = int(parts[1]), int(parts[2])
+            except (IndexError, ValueError):
+                print("Usage: start <rounds> <timeout>")
+                continue
+            with clients_lock:
+                player_count = len(connected_clients)
+            if player_count == 0:
+                print("Cannot start game: 0 players connected.")
+            else:
+                print(f"Starting game of {rounds} rounds, {timeout}s timeout with {player_count} players...")
+                game_started.set()
+                broadcast({"type": "STATUS", "message": "[LOBBY] Admin started the game! Prepare yourselves."})
+                game_thread = threading.Thread(
+                    target=game.start, args=(
+                        rounds, timeout, clients_lock, connected_clients, broadcast, send_msg, game_started
+                    ), daemon=True
+                )
+                game_thread.start()
         except (EOFError, KeyboardInterrupt):
             break
 
@@ -131,8 +157,9 @@ def main():
                 target=handle_client, args=(client_socket, addr), daemon=True
             )
             client_thread.start()
-            print(f"Active client threads: {threading.active_count() - 2}") # -2 for the main thread and the admin thread
+            with clients_lock:
+                player_count = len(connected_clients)
+            print(f"Active connections: {player_count + 1}")
 
 if __name__ == "__main__":
     main()
-

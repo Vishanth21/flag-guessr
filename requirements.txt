@@ -1,3 +1,4 @@
 rich
 climage
 pillow
+pyreadline3; sys_platform == 'win32'
