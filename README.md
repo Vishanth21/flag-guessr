@@ -12,7 +12,7 @@ A multiplayer flag-guessing quiz game built with raw TCP sockets and Python. Pla
 - [x] Admin-controlled lobby (server operator types `start`)
 - [x] Country flags converted to ANSI art
 - [x] Rich terminal UI on the client side
-- [ ] Timed question rounds with countdown
+- [x] Timed question rounds with countdown
 - [ ] Answer evaluation and scoring
 - [ ] Live leaderboard after each round
 - [ ] SSL/TLS encrypted connections
@@ -116,7 +116,7 @@ The server broadcasts flag questions to all connected clients.
 | `HOST` | `server.py` / `client.py` | `127.0.0.1` | Server bind address |
 | `PORT` | `server.py` / `client.py` | `65432` | Server port |
 | `FLAG_CDN` | `flag_converter.py` | `w160` | Source image resolution |
-| `RENDER_W` | `flag_converter.py` | `60` | ANSI flag width (columns) |
+| `RENDER_W` | `flag_converter.py` | `30` | ANSI flag width (columns) |
 
 ## Tech Stack
 
