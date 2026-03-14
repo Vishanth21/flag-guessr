@@ -5,6 +5,8 @@ import struct
 import json
 import time
 import readline
+import ssl
+import os
 from rich.console import Console, Group
 from rich.panel import Panel
 from rich.table import Table
@@ -24,6 +26,14 @@ current_question = {}
 previous_scores = {}
 round_end_time = 0.0
 
+# Path to certificate
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+CERT_PATH = os.path.join(BASE_DIR, "certs", "server.crt")
+
+context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
+context.load_verify_locations(CERT_PATH)
+context.check_hostname = False # since i plan on using ngrok to tunnel communications, where hostname will be ngrok.something
+context.verify_mode = ssl.CERT_REQUIRED # but server certification SHOULD match
 
 def recv_all(sock, n):
     data = bytearray()
@@ -190,7 +200,8 @@ def main():
     timer_t = threading.Thread(target=_timer_thread, daemon=True)
     timer_t.start()
     
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as client_socket:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as raw_socket:
+        client_socket = context.wrap_socket(raw_socket)
         try:
             client_socket.connect((HOST, PORT))
         except ConnectionRefusedError:

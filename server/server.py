@@ -3,13 +3,22 @@ import threading
 import struct
 import json
 import game
+import ssl
+import os
 
 HOST = "127.0.0.1"
 PORT = 65432
 
+# Path to certificates
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+CERT_PATH = os.path.join(BASE_DIR, "certs", "server.crt")
+KEY_PATH = os.path.join(BASE_DIR, "certs", "server.key")
+
 connected_clients = {}
 clients_lock = threading.Lock()
 game_started = threading.Event()
+context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+context.load_cert_chain(certfile=CERT_PATH, keyfile=KEY_PATH)
 
 def broadcast(msg_dict):
     # broadcast a message to every client 
@@ -153,13 +162,18 @@ def main():
 
         while True:
             client_socket, addr = server_socket.accept()
-            client_thread = threading.Thread(
-                target=handle_client, args=(client_socket, addr), daemon=True
-            )
-            client_thread.start()
-            with clients_lock:
-                player_count = len(connected_clients)
-            print(f"Active connections: {player_count + 1}")
+            try:
+                secure_socket = context.wrap_socket(client_socket, server_side=True) 
+                client_thread = threading.Thread(
+                    target=handle_client, args=(secure_socket, addr), daemon=True
+                )
+                client_thread.start()
+                with clients_lock:
+                    player_count = len(connected_clients)
+                print(f"Active connections: {player_count + 1}")
+            except (ssl.SSLError, OSError) as e:
+                print(f"SSL handshake or connection error: {e}")
+                client_socket.close()
 
 if __name__ == "__main__":
     main()

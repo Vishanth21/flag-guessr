@@ -9,13 +9,13 @@ A multiplayer flag-guessing quiz game built with raw TCP sockets and Python. Pla
 - [x] Multi-client support via threaded server
 - [x] Username-based login system
 - [x] Thread-safe client/server with proper locking
-- [x] Admin-controlled lobby (server operator types `start`)
+- [x] Admin-controlled lobby
 - [x] Country flags converted to ANSI art
 - [x] Rich terminal UI on the client side
 - [x] Timed question rounds with countdown
 - [x] Answer evaluation and scoring
 - [x] Live leaderboard after each round
-- [ ] SSL/TLS encrypted connections
+- [x] SSL/TLS encrypted connections (end-to-end)
 
 ## Project Structure
 
@@ -24,14 +24,14 @@ flag-guessr/
 ├── README.md
 ├── requirements.txt
 ├── data/
-│   └── ansi_flags.json        # Pre-rendered ANSI flag art (generated)
+│   └── ansi_flags.json        # Pre-rendered ANSI flag art
 ├── scripts/
 │   └── flag_converter.py      # One-time script to generate flag data
 ├── server/
-│   └── server.py              # TCP server, lobby, game logic
+│   └── server.py              # Secure TCP server, lobby, game logic
 ├── client/
-│   └── client.py              # TCP client, Rich UI, input handling
-└── certs/                     # SSL/TLS certificates (future)
+│   └── client.py              # Secure TCP client, Rich UI, input handling
+└── certs/                     # SSL/TLS certificates
     ├── server.crt
     └── server.key
 ```
@@ -41,6 +41,7 @@ flag-guessr/
 ### Prerequisites
 
 - Python 3.10+
+- OpenSSL (for generating certificates)
 - A terminal with truecolor support (e.g. Kitty, iTerm2, Windows Terminal)
 
 ### 1. Clone the repository
@@ -63,6 +64,18 @@ source .venv/bin/activate        # Linux/macOS
 ```bash
 pip install -r requirements.txt
 ```
+
+### 4. Generate SSL Certificates
+
+The game requires TLS encryption. Generate a self-signed certificate:
+
+```bash
+mkdir -p certs
+openssl req -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout certs/server.key -out certs/server.crt
+```
+
+> [!NOTE]
+> During generation, you can leave the fields blank by entering `.` when prompted.
 
 ### 4. Generate flag data (first time only / optional: if you dont have the json file)
 
