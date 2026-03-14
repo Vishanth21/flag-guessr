@@ -110,7 +110,7 @@ COUNTRIES = [
 
 FLAG_CDN  = "https://flagcdn.com/w160/{code}.png"
 OUT_PATH  = Path(__file__).resolve().parent.parent / "data" / "ansi_flags.json"
-RENDER_W  = 60
+RENDER_W  = 30
 
 def fetch_flag_png(code: str) -> bytes | None:
     url = FLAG_CDN.format(code=code.lower())
