@@ -1,0 +1,11 @@
+[project]
+name = "flag-guessr"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "climage>=0.2.2",
+    "pillow>=12.1.1",
+    "rich>=14.3.3",
+]
