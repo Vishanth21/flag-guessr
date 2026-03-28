@@ -5,6 +5,7 @@ import json
 import game
 import ssl
 import os
+import sys 
 
 HOST = "127.0.0.1"
 PORT = 65432
@@ -68,12 +69,16 @@ def handle_client(connection, addr):
                 return
 
             username = join_data.get("username", "Unknown")
-            # TODO: handle multiple same username
-            print(f"Player '{username}' connected from {addr[0]}:{addr[1]}.")
 
             with clients_lock:
+                if username in connected_clients:
+                    send_msg(connection, {"type": "ERROR", "message": f"Username {username} already taken."})
+                    return
+                
                 connected_clients[username] = connection
                 player_count = len(connected_clients)
+                print(f"Player '{username}' connected from {addr[0]}:{addr[1]}.")
+                print(f"Active connections: {player_count}")
 
             send_msg(connection, {"type": "STATUS", "message": f"Welcome to Flag-Guessr, {username}!\n"})
 
@@ -154,6 +159,7 @@ def main():
         server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1) # force reuse the socket
         server_socket.bind((HOST, PORT))
         server_socket.listen()
+        server_socket.settimeout(1.0) # wake up every 1s to check for other inputs(keyboard interrupt specifically) than socket.accept() sicne its blocking
         print(f"Server listening on {HOST}:{PORT}... Type 'start' to begin the game.")
 
         # start listening to server admin input
@@ -161,19 +167,29 @@ def main():
         admin_thread.start()
 
         while True:
-            client_socket, addr = server_socket.accept()
             try:
-                secure_socket = context.wrap_socket(client_socket, server_side=True) 
-                client_thread = threading.Thread(
-                    target=handle_client, args=(secure_socket, addr), daemon=True
-                )
-                client_thread.start()
-                with clients_lock:
-                    player_count = len(connected_clients)
-                print(f"Active connections: {player_count + 1}")
-            except (ssl.SSLError, OSError) as e:
-                print(f"SSL handshake or connection error: {e}")
-                client_socket.close()
+                client_socket, addr = server_socket.accept()
+                try:
+                    secure_socket = context.wrap_socket(client_socket, server_side=True) 
+                    client_thread = threading.Thread(
+                        target=handle_client, args=(secure_socket, addr), daemon=True
+                    )
+                    client_thread.start()
+                    
+                except (ssl.SSLError, OSError) as e:
+                    print(f"SSL handshake or connection error: {e}")
+                    client_socket.close()
+            except socket.timeout:
+                continue
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("KeyboardInterrupt: Shutting down gracefully...")
+        with clients_lock:
+            for sock in connected_clients.values():
+                try:
+                    sock.close()
+                except: pass
+        sys.exit(0)

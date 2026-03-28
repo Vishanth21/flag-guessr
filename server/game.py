@@ -14,7 +14,7 @@ current_round = {}   # mutable dict holding round state so handle_client can che
 
 def _load_flags():
     """Load flag data from JSON file."""
-    with open(DATA_PATH, "r") as fd:
+    with open(DATA_PATH, "r", encoding="utf-8") as fd:
         return json.load(fd)
 
 
