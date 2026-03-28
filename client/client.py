@@ -4,8 +4,17 @@ import sys
 import struct
 import json
 import time
-import readline
 import ssl
+import select
+
+# Cross-platform single-keypress reading
+try:
+    import tty
+    import termios
+    _POSIX = True
+except ImportError:
+    _POSIX = False
+    import msvcrt
 import os
 from rich.console import Console, Group
 from rich.panel import Panel
@@ -87,27 +96,62 @@ def _render_leaderboard(rankings):
     return table
 
 
+def _read_key(timeout=0.05):
+    if _POSIX:
+        # Check if input is available within timeout
+        rlist, _, _ = select.select([sys.stdin], [], [], timeout)
+        if rlist:
+            return sys.stdin.read(1)
+        return None
+    else:
+        # Windows
+        if msvcrt.kbhit():
+            ch = msvcrt.getwch()
+            return ch
+        time.sleep(timeout)
+        return None
+
+
 def _timer_thread():
+    # Use a dedicated Console that renders to a string buffer so we can
+    # write the entire prompt in a single sys.stdout.write() call - this
+    # avoids the blank-line flash caused by erase-then-write.
+    from io import StringIO
+
+    buf_console = Console(file=StringIO(), force_terminal=True, color_system=console.color_system)
+
+    sys.stdout.write("\x1b[?25l")  # hide cursor
+    sys.stdout.flush()
+
     while True:
         try:
             can_answer.wait()
             while can_answer.is_set():
                 remaining = max(0.0, round_end_time - time.time())
-                
+
                 with print_lock:
-                    # Only re-draw if we are still active and it's our prompt
                     if can_answer.is_set():
-                        buf = readline.get_line_buffer() if readline else ""
-                        sys.stdout.write("\r\x1b[K")
-                        console.print(f"[bold yellow]Your answer (1-4)[/bold yellow] [cyan]({remaining:.3f}s)[/cyan]: {buf}", end="")
+                        buf_console.file.seek(0)
+                        buf_console.file.truncate()
+                        buf_console.print(
+                            f"[bold yellow]Press 1-4 to answer[/bold yellow] [cyan]({remaining:.1f}s)[/cyan]: ",
+                            end="",
+                        )
+                        rendered = buf_console.file.getvalue()
+                        # \r  -> return to start of line
+                        # rendered -> overwrite with new content
+                        # \x1b[K -> clear any leftover chars from a previously longer line
+                        sys.stdout.write(f"\r{rendered}\x1b[K")
                         sys.stdout.flush()
-                
+
                 if remaining <= 0:
                     break
                 time.sleep(0.05)
         except Exception:
             break
 
+    sys.stdout.write("\x1b[?25h")  # restore cursor
+    sys.stdout.flush()
 
 def listen_to_server(client_socket):
     while True:
@@ -155,7 +199,7 @@ def listen_to_server(client_socket):
                         expand=False,
                     )
                     console.print(panel)
-                    console.print("[bold yellow]Your answer (1-4):[/bold yellow] ", end="")
+                    console.print("[bold yellow]Press 1-4 to answer:[/bold yellow] ", end="")
 
                 elif msg_type == "EVALUATION":
                     result = response_dict.get("result")
@@ -218,32 +262,47 @@ def main():
         listener_thread.start()
         console.print("[dim]Waiting for game to start...[/dim]")
 
-        while True:
-            try:
-                # Block until a question is active and user hasn't answered
-                can_answer.wait()
+        # Put terminal in semi-raw mode for single-keypress reading
+        if _POSIX:
+            old_settings = termios.tcgetattr(sys.stdin)
+            tty.setcbreak(sys.stdin.fileno())  # cbreak: raw keypresses but still allow Ctrl+C
 
-                # read buffer -> clear prompt line -> print new prompt with buffer (refer timer thread)
-                data = input()
+        try:
+            while True:
+                try:
+                    # Block until a question is active
+                    can_answer.wait()
 
-                # Send an ANSWER if still in an active round
-                if can_answer.is_set() and data.strip() in ["1", "2", "3", "4"]:
-                    choice_idx = int(data.strip()) - 1
-                    options = current_question.get("options", [])
-                    if 0 <= choice_idx < len(options):
-                        payload = {
-                            "type": "ANSWER",
-                            "question_id": current_question.get("question_id"),
-                            "answer": options[choice_idx],
-                            "client_elapsed_time": time.time() - (round_end_time - current_question.get("time_limit", 10.0))
-                        }
-                        send_msg(client_socket, payload)
-                        can_answer.clear()
-                        console.print("[dim]Answer sent. Waiting for others...[/dim]")
-                    else:
-                        console.print("[bold red]Invalid option.[/bold red]")
-            except (EOFError, KeyboardInterrupt):
-                break
+                    # Poll for a single keypress
+                    key = _read_key(timeout=0.05)
+                    if key is None:
+                        continue
+
+                    # Send an ANSWER if still in an active round
+                    if can_answer.is_set():
+                        if key in ("1", "2", "3", "4"):
+                            choice_idx = int(key) - 1
+                            options = current_question["options"]
+                            payload = {
+                                "type": "ANSWER",
+                                "question_id": current_question["question_id"],
+                                "answer": options[choice_idx],
+                                "client_elapsed_time": time.time() - (round_end_time - current_question["time_limit"])
+                            }
+                            send_msg(client_socket, payload)
+                            can_answer.clear()
+                            with print_lock:
+                                sys.stdout.write("\r\x1b[K")
+                                console.print(f"[dim]Answer {key} sent. Waiting for others...[/dim]")
+                        else:
+                            with print_lock:
+                                console.print(f"[bold red]Invalid key '{key}'. Press 1-4 to answer.[/bold red]")
+                except (EOFError, KeyboardInterrupt):
+                    break
+        finally:
+            # Restore terminal settings
+            if _POSIX:
+                termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
 
 if __name__ == "__main__":
     main()
