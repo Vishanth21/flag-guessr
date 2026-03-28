@@ -53,7 +53,23 @@ def recv_msg(sock):
     if not raw_msglen:
         return None
     msglen = struct.unpack('>I', raw_msglen)[0]
-    raw_data = recv_all(sock, msglen) #body
+    
+    # 1. Payload Size Validation (prevent huge headers)
+    if msglen > 4096:
+        print(f"Security: Connection dropped. Claimed payload size ({msglen} bytes) too large.")
+        return None
+        
+    # 2. Body Read Timeout (prevent slow-loris attack)
+    old_timeout = sock.gettimeout()
+    sock.settimeout(5.0)
+    try:
+        raw_data = recv_all(sock, msglen) #body
+    except socket.timeout:
+        print("Security: Connection dropped. Timed out receiving message body.")
+        return None
+    finally:
+        sock.settimeout(old_timeout)
+        
     if not raw_data:
         return None
     return json.loads(raw_data.decode('utf-8'))
